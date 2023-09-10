@@ -39,7 +39,7 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, state *
 	currentBaseFee := eip1559.CalcBaseFee(config, parent)
 
 	// 1.125 * currentBaseFee
-	gasFeeThreshold := new(big.Float).Mul(new(big.Float).SetFloat64(0.125), new(big.Float).SetInt(currentBaseFee))
+	gasFeeThreshold := new(big.Float).Mul(new(big.Float).SetFloat64(1.125), new(big.Float).SetInt(currentBaseFee))
 
 	// Prepare the signer object
 	signer := types.LatestSigner(config)
