@@ -44,6 +44,9 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 	// Create a nonce cache
 	nonceCache := make(map[common.Address]uint64)
 
+	// Track total gas limit
+	gasLimit := uint64(0)
+
 	// Verify if the summary and transactions match. Also check if the txs
 	// have at least 12.5% higher `maxFeePerGas` than parent block's base fee.
 	for i, summary := range list.Summary {
@@ -52,6 +55,14 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 		// Don't allow BlobTxs
 		if tx.Type() == types.BlobTxType {
 			log.Debug("IL verification failed: received blob tx")
+			return false
+		}
+
+		// Verify gas limit
+		gasLimit += tx.Gas()
+
+		if gasLimit > MAX_GAS_PER_INCLUSION_LIST {
+			log.Debug("IL verification failed: gas limit exceeds maximum allowed")
 			return false
 		}
 
@@ -80,10 +91,12 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 		}
 
 		// Verify gas fee: tx.GasFeeCap > 1.125 * parent.BaseFee
-		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) < 1 {
+		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) == -1 {
 			return false
 		}
 	}
+
+	log.Debug("IL verified successfully", "len", len(list.Summary), "gas", gasLimit)
 
 	return true
 }
