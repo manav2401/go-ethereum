@@ -3,8 +3,8 @@ package core
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -17,11 +17,8 @@ const (
 )
 
 // VerifyInclusionList verifies the properties of the inclusion list and the
-// transactions in it against the given `state` object.
-//
-// The verification involves actual execution of the transactions so
-// it's the caller's responsibility to send a copy of the state object.
-func verifyInclusionList(list types.InclusionList, parent *types.Header, state *state.StateDB, config *params.ChainConfig) bool {
+// transactions in it based on a `parent` block.
+func verifyInclusionList(list types.InclusionList, parent *types.Header, config *params.ChainConfig, getStateNonce func(addr common.Address) uint64) bool {
 	// Validate few basic things first in the inclusion list.
 	if len(list.Summary) != len(list.Transactions) {
 		log.Debug("Inclusion list summary and transactions length mismatch")
@@ -44,27 +41,49 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, state *
 	// Prepare the signer object
 	signer := types.LatestSigner(config)
 
+	// Create a nonce cache
+	nonceCache := make(map[common.Address]uint64)
+
 	// Verify if the summary and transactions match. Also check if the txs
 	// have at least 12.5% higher `maxFeePerGas` than parent block's base fee.
 	for i, summary := range list.Summary {
 		tx := list.Transactions[i]
-		from, err := types.Sender(signer, tx)
-		if err != nil {
-			log.Debug("Failed to get sender from transaction", "err", err)
-			return false
-		}
-		if summary.Address != from {
-			log.Debug("Inclusion list summary and transaction address mismatch")
+
+		// Don't allow BlobTxs
+		if tx.Type() == types.BlobTxType {
+			log.Debug("IL verification failed: received blob tx")
 			return false
 		}
 
-		// tx.GasFeeCap > 1.125 * parent.BaseFee
+		// Verify sender
+		from, err := types.Sender(signer, tx)
+		if err != nil {
+			log.Debug("IL verification failed: unable to get sender from transaction", "err", err)
+			return false
+		}
+		if summary.Address != from {
+			log.Debug("IL verification failed: summary and transaction address mismatch")
+			return false
+		}
+
+		// Verify nonce from state
+		nonce := getStateNonce(from)
+		if cacheNonce, ok := nonceCache[from]; ok {
+			nonce = cacheNonce
+		}
+
+		if tx.Nonce() == nonce+1 {
+			nonceCache[from] = tx.Nonce()
+		} else {
+			log.Debug("IL verification failed: incorrect nonce", "state nonce", nonce, "tx nonce", tx.Nonce())
+			return false
+		}
+
+		// Verify gas fee: tx.GasFeeCap > 1.125 * parent.BaseFee
 		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) < 1 {
 			return false
 		}
 	}
 
-	// TODO: Execute txs. Mostly all required params are available except evm context.
-
-	return false
+	return true
 }

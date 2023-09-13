@@ -106,6 +106,10 @@ type SubPool interface {
 	// by the pool already applied on top.
 	Nonce(addr common.Address) uint64
 
+	// StateNonce returns the next nonce of an account from the underlying state, without
+	// applying any transactions from the pool on top.
+	StateNonce(addr common.Address) uint64
+
 	// Stats retrieves the current pool stats, namely the number of pending and the
 	// number of queued (non-executable) transactions.
 	Stats() (int, int)

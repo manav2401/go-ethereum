@@ -187,14 +187,11 @@ func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionLis
 		return false
 	}
 
-	// Fetch the parent state to verify the inclusion list.
-	state, err := api.eth.BlockChain().StateAt(parent.Root())
-	if err != nil {
-		log.Warn("Unable to fetch parent block state, skipping verification", "err", err)
-		return false
+	getStateNonce := func(addr common.Address) uint64 {
+		return api.eth.TxPool().StateNonce(addr)
 	}
 
-	return api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), state.Copy())
+	return api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), getStateNonce)
 }
 
 // TODO: update/define executable params

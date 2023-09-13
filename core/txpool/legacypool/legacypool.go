@@ -456,6 +456,15 @@ func (pool *LegacyPool) Nonce(addr common.Address) uint64 {
 	return pool.pendingNonces.get(addr)
 }
 
+// StateNonce returns the next nonce of an account from the underlying state, without
+// applying any transactions from the pool on top.
+func (pool *LegacyPool) StateNonce(addr common.Address) uint64 {
+	pool.mu.RLock()
+	defer pool.mu.RUnlock()
+
+	return pool.currentState.GetNonce(addr)
+}
+
 // Stats retrieves the current pool stats, namely the number of pending and the
 // number of queued (non-executable) transactions.
 func (pool *LegacyPool) Stats() (int, int) {

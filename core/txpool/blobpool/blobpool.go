@@ -1480,6 +1480,16 @@ func (p *BlobPool) Nonce(addr common.Address) uint64 {
 	return p.state.GetNonce(addr)
 }
 
+// StateNonce returns the next nonce of an account from the underlying state, without
+// applying any transactions from the pool on top. This is only used for verification
+// of inclusion list which only supports *legacy* transactions as of now.
+func (p *BlobPool) StateNonce(addr common.Address) uint64 {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+
+	return 0
+}
+
 // Stats retrieves the current pool stats, namely the number of pending and the
 // number of queued (non-executable) transactions.
 func (p *BlobPool) Stats() (int, int) {
