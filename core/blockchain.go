@@ -2588,6 +2588,6 @@ func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
 
-func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *types.Header, getStateNonce func(common.Address) uint64) bool {
+func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *types.Header, getStateNonce func(common.Address) uint64) (bool, error) {
 	return verifyInclusionList(list, parent, bc.Config(), getStateNonce)
 }

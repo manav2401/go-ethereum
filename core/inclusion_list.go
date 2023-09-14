@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,16 +19,16 @@ const (
 
 // VerifyInclusionList verifies the properties of the inclusion list and the
 // transactions in it based on a `parent` block.
-func verifyInclusionList(list types.InclusionList, parent *types.Header, config *params.ChainConfig, getStateNonce func(addr common.Address) uint64) bool {
+func verifyInclusionList(list types.InclusionList, parent *types.Header, config *params.ChainConfig, getStateNonce func(addr common.Address) uint64) (bool, error) {
+	// TODO: Not sure if we want to float the errors back to CL or not
 	// Validate few basic things first in the inclusion list.
 	if len(list.Summary) != len(list.Transactions) {
-		log.Debug("Inclusion list summary and transactions length mismatch")
-		return false
+		return false, errors.New("IL summary and transactions length mismatch")
 	}
 
 	if len(list.Summary) > MAX_TRANSACTIONS_PER_INCLUSION_LIST {
-		log.Debug("Inclusion list exceeds maximum number of transactions")
-		return false
+		log.Debug("IL verification failed: exceeds maximum number of transactions", "len", len(list.Summary), "max", MAX_TRANSACTIONS_PER_INCLUSION_LIST)
+		return false, errors.New("IL exceeds maximum number of transactions")
 	}
 
 	// As IL will be included in the next block, calculate the current block's base fee.
@@ -54,27 +55,26 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 
 		// Don't allow BlobTxs
 		if tx.Type() == types.BlobTxType {
-			log.Debug("IL verification failed: received blob tx")
-			return false
+			return false, errors.New("received blob tx in IL")
 		}
 
 		// Verify gas limit
 		gasLimit += tx.Gas()
 
 		if gasLimit > MAX_GAS_PER_INCLUSION_LIST {
-			log.Debug("IL verification failed: gas limit exceeds maximum allowed")
-			return false
+			log.Debug("IL verification failed: gas limit exceeds maximum allowed", "gaslimit", gasLimit, "max", MAX_GAS_PER_INCLUSION_LIST)
+			return false, errors.New("IL gas limit exceeds maximum allowed")
 		}
 
 		// Verify sender
 		from, err := types.Sender(signer, tx)
 		if err != nil {
 			log.Debug("IL verification failed: unable to get sender from transaction", "err", err)
-			return false
+			return false, errors.New("invalid tx in IL")
 		}
 		if summary.Address != from {
-			log.Debug("IL verification failed: summary and transaction address mismatch")
-			return false
+			log.Debug("IL verification failed: summary and transaction address mismatch", "summary", summary.Address, "tx", from)
+			return false, errors.New("summary and transaction address mismatch in IL")
 		}
 
 		// Verify nonce from state
@@ -87,16 +87,17 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 			nonceCache[from] = tx.Nonce()
 		} else {
 			log.Debug("IL verification failed: incorrect nonce", "state nonce", nonce, "tx nonce", tx.Nonce())
-			return false
+			return false, errors.New("incorrect nonce in IL")
 		}
 
-		// Verify gas fee: tx.GasFeeCap > 1.125 * parent.BaseFee
+		// Verify gas fee: tx.GasFeeCap > 1.125 * currentBaseFee
 		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) == -1 {
-			return false
+			log.Debug("IL verification failed: insufficient gas fee cap", "gasFeeCap", tx.GasFeeCap(), "threshold", gasFeeThreshold)
+			return false, errors.New("insufficient gas fee cap in IL")
 		}
 	}
 
 	log.Debug("IL verified successfully", "len", len(list.Summary), "gas", gasLimit)
 
-	return true
+	return true, nil
 }

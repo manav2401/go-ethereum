@@ -165,17 +165,20 @@ func (api *ConsensusAPI) GetInclusionListV1() (*types.InclusionList, error) {
 	// TODO(manav): Do we check here if we're on correct fork or are fully synced? If not
 	// we might end up delivering wrong IL. Other will reject it though but do we want to
 	// risk it?
+
 	// Call txpool.GetInclusion list here
 	return nil, nil
 }
 
 // NewInclusionListV1 validates whether an inclusion list (summary + txs) is
 // correct for the current state or not.
-func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionList) bool {
+func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionList) (engine.InclusionListStatusV1, error) {
+	// TODO: Add HF related checks
+
 	log.Trace("Engine API request received", "method", "NewInclusionListV1")
 	if params.ParentHash == (common.Hash{}) {
 		log.Warn("Inclusion list verification requested with zero parent hash")
-		return false
+		return engine.InclusionListStatusV1{Status: engine.INVALID}, errors.New("newInclusionListV1 called with empty parent hash")
 	}
 
 	// Check if we have parent block available or not. If not, reject the
@@ -184,14 +187,24 @@ func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionLis
 	parent := api.eth.BlockChain().GetBlockByHash(params.ParentHash)
 	if parent == nil {
 		log.Warn("Inclusion list verification requested with unknown parent", "hash", params.ParentHash)
-		return false
+		return engine.InclusionListStatusV1{Status: engine.INVALID}, errors.New("newInclusionListV1 called with invalid parent hash")
 	}
 
 	getStateNonce := func(addr common.Address) uint64 {
 		return api.eth.TxPool().StateNonce(addr)
 	}
 
-	return api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), getStateNonce)
+	valid, err := api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), getStateNonce)
+	if !valid && err == nil {
+		err = errors.New("invalid inclusion list")
+	}
+
+	if err != nil {
+		log.Trace("Inclusion list verification failed", "err", err)
+		return engine.InclusionListStatusV1{Status: engine.INVALID}, err
+	}
+
+	return engine.InclusionListStatusV1{Status: engine.VALID}, nil
 }
 
 // TODO: update/define executable params

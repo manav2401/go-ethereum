@@ -284,3 +284,7 @@ type VerifiableInclusionList struct {
 	ParentHash    common.Hash         `json:"parentHash"`
 	InclusionList types.InclusionList `json:"inclusionList"`
 }
+
+type InclusionListStatusV1 struct {
+	Status string `json:"status"`
+}
