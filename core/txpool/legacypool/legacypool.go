@@ -51,14 +51,6 @@ const (
 	// more expensive to propagate; larger transactions also take more resources
 	// to validate whether they fit into the pool or not.
 	txMaxSize = 4 * txSlotSize // 128KB
-
-	// maxTxsPerInclusionList is the maximum number of transactions that can be
-	// included in an inclusion list (MAX_TRANSACTIONS_PER_INCLUSION_LIST).
-	maxTxsPerInclusionList = 16
-
-	// maxGasPerInclusionList is the maximum amount of gas that can be included
-	// in an inclusion list (INCLUSION_LIST_MAX_GAS).
-	maxGasPerInclusionList = 5000000 // 5M
 )
 
 var (
@@ -1690,52 +1682,126 @@ func (pool *LegacyPool) demoteUnexecutables() {
 // GetInclusionList returns an inclusion list from the pool containing pairs
 // of transaction summary and data which are executable.
 func (pool *LegacyPool) GetInclusionList() *types.InclusionList {
-	// The following conditions should be satisfied while filling the inclusion list.
-	// 		1. The size of IL should not exceed `maxTxsPerInclusionList`
-	//
-	// 		2. The total gas limit should not exceed `maxGasPerInclusionList`
-	//
-	// 		3. The `maxFeePerGas` of all the transactions should be 1.125 times
-	//			the `baseFee` of the current block to account for increase in the
-	// 			next block due to EIP 1559.
-	summaries := make([]*types.InclusionListEntry, 0, maxTxsPerInclusionList)
-	transactions := make([]*types.Transaction, 0, maxTxsPerInclusionList)
+	summaries := make([]*types.InclusionListEntry, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
+	transactions := make([]*types.Transaction, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
 
-	// TODO(manav2401): Not sure what's the best way to fetch transactions for inclusion list.
-	// Few possibilities are: prioritise locals first, borrow the tx ordering
-	// logic from miner if we want to choose best transactions.
+	// TODO: Not sure what's the best way to fetch transactions for inclusion list.
+	// Few possibilities are:
+	// 1. Prioritise locals first
+	// 2. Highest paying ones
+	// 3. Stayed in txpool for the longest time
+	// 4. Reorged more than twice
 
-	// TODO(manav): This is just a brute force logic - has a lot of scope for improvement
-	remoteTxs := pool.Pending(true)
+	// TODO: This logic is borrowed from miner. Figure out something
+	// to avoid duplicate code.
+	pending := pool.Pending(true)
+
+	// Split the pending transactions into locals and remotes.
+	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 	for _, account := range pool.Locals() {
 		if txs := remoteTxs[account]; len(txs) > 0 {
 			delete(remoteTxs, account)
-
-			// TODO(manav): Decide if we want multiple txs from the same account.
-			for _, lasyTx := range txs {
-				tx := lasyTx.Resolve()
-				// TODO(manav): Perform checks for (2) and (3) here.
-				summary := types.InclusionListEntry{
-					Address:  account,
-					GasLimit: uint32(tx.Gas()),
-				}
-				summaries = append(summaries, &summary)
-				transactions = append(transactions, tx)
-				if len(summaries) == maxTxsPerInclusionList {
-					break
-				}
-			}
-
-			if len(summaries) == maxTxsPerInclusionList {
-				break
-			}
+			localTxs[account] = txs
 		}
 	}
 
-	// If we still have space, fill with remote txs
-	// TODO(manav): borrow ordering logic from miner OR write a simple one for IL
+	// TODO: Confirm if in case of ePBS, `pool.currentHead` has the `slot N` block
+	// or parent (i.e. `slot N-1`) block.
+
+	// As IL will be included in the next block, calculate the current block's base fee.
+	// As the current block's payload isn't revealed yet (due to ePBS), calculate
+	// it from parent block.
+	currentBaseFee := eip1559.CalcBaseFee(pool.chainconfig, pool.currentHead.Load())
+
+	// 1.125 * currentBaseFee
+	gasFeeThreshold := new(big.Float).Mul(new(big.Float).SetFloat64(1.125), new(big.Float).SetInt(currentBaseFee))
+
+	total := uint64(0)
+	gasLimit := uint64(0)
+
+	// Try filling IL with locals first
+	if len(localTxs) > 0 {
+		// TODO: What baseFee to use in this function?
+		txs := newTransactionsByPriceAndNonce(pool.signer, localTxs, pool.currentHead.Load().BaseFee)
+		localSummary, localTxs := filterTxs(pool.chainconfig, txs, &total, &gasLimit, gasFeeThreshold)
+
+		summaries = append(summaries, localSummary...)
+		transactions = append(transactions, localTxs...)
+	}
+
+	// Check for remote txs if we have space in IL
+	if (total < core.MAX_TRANSACTIONS_PER_INCLUSION_LIST) && len(remoteTxs) > 0 {
+		// TODO: What baseFee to use in this function?
+		txs := newTransactionsByPriceAndNonce(pool.signer, localTxs, pool.currentHead.Load().BaseFee)
+		remoteSummary, remoteTxs := filterTxs(pool.chainconfig, txs, &total, &gasLimit, gasFeeThreshold)
+
+		summaries = append(summaries, remoteSummary...)
+		transactions = append(transactions, remoteTxs...)
+	}
 
 	return &types.InclusionList{Summary: summaries, Transactions: transactions}
+}
+
+func filterTxs(config *params.ChainConfig, txs *transactionsByPriceAndNonce, total, gasLimit *uint64, gasFeeThreshold *big.Float) ([]*types.InclusionListEntry, []*types.Transaction) {
+	var (
+		intrinsicGas uint64 = 21_000
+
+		summaries    = make([]*types.InclusionListEntry, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
+		transactions = make([]*types.Transaction, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
+	)
+
+	// Prepare the signer object
+	signer := types.LatestSigner(config)
+
+	for {
+		ltx := txs.Peek()
+		if ltx == nil {
+			break
+		}
+		tx := ltx.Resolve()
+		if tx == nil {
+			txs.Pop()
+			continue
+		}
+
+		// Check if we have enough space in IL
+		if *total+1 > core.MAX_TRANSACTIONS_PER_INCLUSION_LIST {
+			log.Debug("Reached max txs per inclusion list")
+			break
+		}
+
+		// Check if we can even afford a new tx with min gas
+		if (core.MAX_GAS_PER_INCLUSION_LIST - *gasLimit) < intrinsicGas {
+			log.Debug("Reached max gas per inclusion list")
+			break
+		}
+
+		// Check if the tx is below the max gas limit allowed.
+		if *gasLimit+tx.Gas() > core.MAX_GAS_PER_INCLUSION_LIST {
+			log.Debug("Reached max gas per inclusion list")
+			txs.Pop()
+			continue
+		}
+
+		// Check if the tx.GasFeeCap > 1.125 * gasFeeThreshold
+		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) == -1 {
+			log.Debug("Gas fee cap is below threshold", "gasFeeCap", tx.GasFeeCap(), "threshold", gasFeeThreshold)
+			txs.Pop()
+			continue
+		}
+
+		*total++
+		*gasLimit += tx.Gas()
+
+		from, _ := types.Sender(signer, tx)
+		summaries = append(summaries, &types.InclusionListEntry{
+			Address:  from,
+			GasLimit: uint32(tx.Gas()),
+		})
+		transactions = append(transactions, tx)
+	}
+
+	return summaries, transactions
 }
 
 // addressByHeartbeat is an account address tagged with its last activity timestamp.

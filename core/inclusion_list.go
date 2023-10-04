@@ -20,8 +20,6 @@ const (
 // VerifyInclusionList verifies the properties of the inclusion list and the
 // transactions in it based on a `parent` block.
 func verifyInclusionList(list types.InclusionList, parent *types.Header, config *params.ChainConfig, getStateNonce func(addr common.Address) uint64) (bool, error) {
-	// TODO: Not sure if we want to float the errors back to CL or not
-	// Validate few basic things first in the inclusion list.
 	if len(list.Summary) != len(list.Transactions) {
 		return false, errors.New("IL summary and transactions length mismatch")
 	}
@@ -90,7 +88,7 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 			return false, errors.New("incorrect nonce in IL")
 		}
 
-		// Verify gas fee: tx.GasFeeCap > 1.125 * currentBaseFee
+		// Verify gas fee: tx.GasFeeCap > 1.125 * gasFeeThreshold
 		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) == -1 {
 			log.Debug("IL verification failed: insufficient gas fee cap", "gasFeeCap", tx.GasFeeCap(), "threshold", gasFeeThreshold)
 			return false, errors.New("insufficient gas fee cap in IL")
