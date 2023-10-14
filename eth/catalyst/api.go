@@ -161,13 +161,21 @@ func newConsensusAPIWithoutHeartbeat(eth *eth.Ethereum) *ConsensusAPI {
 
 // GetInclusionListV1 returns an inclusion list which contains summary + list of transactions
 // which are valid for the current slot.
-func (api *ConsensusAPI) GetInclusionListV1() (*types.InclusionList, error) {
+func (api *ConsensusAPI) GetInclusionListV1(parentHash common.Hash) (engine.InclusionListV1, error) {
+	// TODO: Add HF related checks
+
+	log.Trace("Engine API request received", "method", "GetInclusionListV1")
+	if parentHash == (common.Hash{}) {
+		log.Warn("Inclusion list requested with zero parent hash")
+		return engine.InclusionListV1{}, errors.New("getInclusionListV1 called with empty parent hash")
+	}
 	// TODO(manav): Do we check here if we're on correct fork or are fully synced? If not
 	// we might end up delivering wrong IL. Other will reject it though but do we want to
 	// risk it?
 
-	// Call txpool.GetInclusion list here
-	return nil, nil
+	// TODO: Get below function to return errors?
+	il := api.eth.TxPool().GetInclusionList()
+	return (engine.InclusionListV1)(*il), nil
 }
 
 // NewInclusionListV1 validates whether an inclusion list (summary + txs) is
@@ -205,11 +213,6 @@ func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionLis
 	}
 
 	return engine.InclusionListStatusV1{Status: engine.VALID}, nil
-}
-
-// TODO: update/define executable params
-func (api *ConsensusAPI) NewPayloadVePBS() bool {
-	return false
 }
 
 // ForkchoiceUpdatedV1 has several responsibilities:
@@ -521,6 +524,19 @@ func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHas
 	return api.newPayload(params, hashes)
 }
 
+// NewPayloadVePBS creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
+func (api *ConsensusAPI) NewPayloadVePBS(params engine.ExecutableData, versionedHashes *[]common.Hash) (engine.PayloadStatusV1, error) {
+	// TODO: Add HF related checks
+
+	// TODO: Add checks if IL fields (i.e. summary + exclusion list) are present or not
+
+	var hashes []common.Hash
+	if versionedHashes != nil {
+		hashes = *versionedHashes
+	}
+	return api.newPayload(params, hashes)
+}
+
 func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashes []common.Hash) (engine.PayloadStatusV1, error) {
 	// The locking here is, strictly, not required. Without these locks, this can happen:
 	//
@@ -601,6 +617,13 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 		log.Warn("State not available, ignoring new payload")
 		return engine.PayloadStatusV1{Status: engine.ACCEPTED}, nil
 	}
+
+	// Before inserting block, verify if it satisfies the inclusion list
+	if valid, err := api.eth.BlockChain().VerifyInclusionListInBlock(params.InclusionListSummary, params.InclusionListExclusions, parent.Body().Transactions, block.Body().Transactions); !valid || err != nil {
+		// TODO: Parse error correctly here for returning
+		return engine.PayloadStatusV1{Status: engine.INVALID}, err
+	}
+
 	log.Trace("Inserting block without sethead", "hash", block.Hash(), "number", block.Number)
 	if err := api.eth.BlockChain().InsertBlockWithoutSetHead(block); err != nil {
 		log.Warn("NewPayloadV1: inserting block failed", "error", err)

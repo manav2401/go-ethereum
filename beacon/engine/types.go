@@ -64,7 +64,9 @@ type ExecutableData struct {
 	BlobGasUsed   *uint64             `json:"blobGasUsed"`
 	ExcessBlobGas *uint64             `json:"excessBlobGas"`
 
-	Summary []*types.InclusionListEntry `json:"summary"`
+	// ePBS
+	InclusionListSummary    InclusionListSummaryV1 `json:"inclusionListSummary"`
+	InclusionListExclusions ExclusionList          `json:"inclusionListExclusions"`
 }
 
 // JSON type overrides for executableData.
@@ -284,6 +286,12 @@ type VerifiableInclusionList struct {
 	ParentHash    common.Hash         `json:"parentHash"`
 	InclusionList types.InclusionList `json:"inclusionList"`
 }
+
+type InclusionListV1 types.InclusionList
+
+type InclusionListSummaryV1 []*types.InclusionListEntry
+
+type ExclusionList []uint64
 
 type InclusionListStatusV1 struct {
 	Status string `json:"status"`

@@ -2591,3 +2591,10 @@ func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *types.Header, getStateNonce func(common.Address) uint64) (bool, error) {
 	return verifyInclusionList(list, parent, bc.Config(), getStateNonce)
 }
+
+func (bc *BlockChain) VerifyInclusionListInBlock(summary []*types.InclusionListEntry, exclusionList []uint64, parentTxs, currentTxs types.Transactions) (bool, error) {
+	// TODO: Gather the IL txs as well here based on the summary
+	list := types.InclusionList{}
+
+	return verifyInclusionListInBlock(list, exclusionList, parentTxs, currentTxs, bc.Config())
+}
