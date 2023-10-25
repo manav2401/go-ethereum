@@ -1682,8 +1682,8 @@ func (pool *LegacyPool) demoteUnexecutables() {
 // GetInclusionList returns an inclusion list from the pool containing pairs
 // of transaction summary and data which are executable.
 func (pool *LegacyPool) GetInclusionList() *types.InclusionList {
-	summaries := make([]*types.InclusionListEntry, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
-	transactions := make([]*types.Transaction, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
+	summaries := make([]*types.InclusionListEntry, 0, core.MaxTransactionsPerInclusionList)
+	transactions := make([]*types.Transaction, 0, core.MaxTransactionsPerInclusionList)
 
 	// TODO: Not sure what's the best way to fetch transactions for inclusion list.
 	// Few possibilities are:
@@ -1730,7 +1730,7 @@ func (pool *LegacyPool) GetInclusionList() *types.InclusionList {
 	}
 
 	// Check for remote txs if we have space in IL
-	if (total < core.MAX_TRANSACTIONS_PER_INCLUSION_LIST) && len(remoteTxs) > 0 {
+	if (total < core.MaxTransactionsPerInclusionList) && len(remoteTxs) > 0 {
 		// TODO: What baseFee to use in this function?
 		txs := newTransactionsByPriceAndNonce(pool.signer, localTxs, pool.currentHead.Load().BaseFee)
 		remoteSummary, remoteTxs := filterTxs(pool.chainconfig, txs, &total, &gasLimit, gasFeeThreshold)
@@ -1746,8 +1746,8 @@ func filterTxs(config *params.ChainConfig, txs *transactionsByPriceAndNonce, tot
 	var (
 		intrinsicGas uint64 = 21_000
 
-		summaries    = make([]*types.InclusionListEntry, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
-		transactions = make([]*types.Transaction, 0, core.MAX_TRANSACTIONS_PER_INCLUSION_LIST)
+		summaries    = make([]*types.InclusionListEntry, 0, core.MaxTransactionsPerInclusionList)
+		transactions = make([]*types.Transaction, 0, core.MaxTransactionsPerInclusionList)
 	)
 
 	// Prepare the signer object
@@ -1765,19 +1765,19 @@ func filterTxs(config *params.ChainConfig, txs *transactionsByPriceAndNonce, tot
 		}
 
 		// Check if we have enough space in IL
-		if *total+1 > core.MAX_TRANSACTIONS_PER_INCLUSION_LIST {
+		if *total+1 > core.MaxTransactionsPerInclusionList {
 			log.Debug("Reached max txs per inclusion list")
 			break
 		}
 
 		// Check if we can even afford a new tx with min gas
-		if (core.MAX_GAS_PER_INCLUSION_LIST - *gasLimit) < intrinsicGas {
+		if (core.MaxGasPerInclusionList - *gasLimit) < intrinsicGas {
 			log.Debug("Reached max gas per inclusion list")
 			break
 		}
 
 		// Check if the tx is below the max gas limit allowed.
-		if *gasLimit+tx.Gas() > core.MAX_GAS_PER_INCLUSION_LIST {
+		if *gasLimit+tx.Gas() > core.MaxGasPerInclusionList {
 			log.Debug("Reached max gas per inclusion list")
 			txs.Pop()
 			continue
