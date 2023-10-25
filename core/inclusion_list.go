@@ -13,7 +13,7 @@ import (
 
 var (
 	ErrSizeMismatch          = errors.New("summary and transactions length mismatch in IL")
-	ErrSizeExceeded          = errors.New("transactions exeeded maximum limit in IL")
+	ErrSizeExceeded          = errors.New("transactions exceeds maximum limit in IL")
 	ErrUnsupportedTxType     = errors.New("unsupported tx type in IL")
 	ErrInvalidTx             = errors.New("invalid tx in IL")
 	ErrGasLimitExceeded      = errors.New("gas limit exceeds maximum allowed in IL")
