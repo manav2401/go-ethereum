@@ -102,7 +102,7 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 			return false, ErrIncorrectNonce
 		}
 
-		// Verify gas fee: tx.GasFeeCap > 1.125 * gasFeeThreshold
+		// Verify gas fee: tx.GasFeeCap >= gasFeeThreshold
 		if new(big.Float).SetInt(tx.GasFeeCap()).Cmp(gasFeeThreshold) == -1 {
 			log.Debug("IL verification failed: insufficient gas fee cap", "gasFeeCap", tx.GasFeeCap(), "threshold", gasFeeThreshold)
 			return false, ErrInsufficientGasFeeCap
