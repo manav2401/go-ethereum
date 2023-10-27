@@ -13,7 +13,7 @@ import (
 )
 
 func transaction(nonce uint64, gaslimit uint64, key *ecdsa.PrivateKey) *types.Transaction {
-	return pricedTransaction(nonce, gaslimit, big.NewInt(1), key)
+	return pricedTransaction(nonce, gaslimit, big.NewInt(30_000_000), key)
 }
 
 func pricedTransaction(nonce uint64, gaslimit uint64, gasprice *big.Int, key *ecdsa.PrivateKey) *types.Transaction {
@@ -35,7 +35,7 @@ func getTxsAndSummary(n int, startNonce uint64, getGasLimit func(n int) uint64, 
 }
 
 func getGasLimitForTest(n int) uint64 {
-	if n == 16 {
+	if n == 15 {
 		return 1_000_000
 	}
 
@@ -48,8 +48,12 @@ func TestVerifyInclusionList(t *testing.T) {
 	getStateNonce := func(addr common.Address) uint64 {
 		return 0
 	}
+	getStateNonce2 := func(addr common.Address) uint64 {
+		return 1
+	}
 
-	summary, txs := getTxsAndSummary(17, 0, getGasLimitForTest, key)
+	summary, txs := getTxsAndSummary(32, 0, getGasLimitForTest, key)
+	summary[16].Address = common.Address{}
 
 	parent := &types.Header{
 		Number:   big.NewInt(0),
@@ -71,12 +75,16 @@ func TestVerifyInclusionList(t *testing.T) {
 		{"unqeual size of summary and transactions - 1", types.InclusionList{Summary: summary[:1], Transactions: txs[:0]}, parent, params.TestChainConfig, getStateNonce, false, ErrSizeMismatch},
 		{"unqeual size of summary and transactions - 2", types.InclusionList{Summary: summary[:0], Transactions: txs[:1]}, parent, params.TestChainConfig, getStateNonce, false, ErrSizeMismatch},
 		{"size exceeded", types.InclusionList{Summary: summary, Transactions: txs}, parent, params.TestChainConfig, getStateNonce, false, ErrSizeExceeded},
+		{"gas limit exceeded", types.InclusionList{Summary: summary[:16], Transactions: txs[:16]}, parent, params.TestChainConfig, getStateNonce, false, ErrGasLimitExceeded},
+		{"invalid sender address", types.InclusionList{Summary: summary[16:], Transactions: txs[16:]}, parent, params.TestChainConfig, getStateNonce, false, ErrSenderMismatch},
+		{"invalid nonce - 1", types.InclusionList{Summary: summary[1:16], Transactions: txs[1:16]}, parent, params.TestChainConfig, getStateNonce, false, ErrIncorrectNonce},
+		{"invalid nonce - 2", types.InclusionList{Summary: summary[:16], Transactions: txs[:16]}, parent, params.TestChainConfig, getStateNonce2, false, ErrIncorrectNonce},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			res, err := verifyInclusionList(tc.list, parent, params.TestChainConfig, getStateNonce)
+			res, err := verifyInclusionList(tc.list, parent, params.TestChainConfig, tc.getStateNonce)
 			assert.Equal(t, res, tc.want, "result mismatch")
 			assert.Equal(t, err, tc.err, "error mismatch")
 		})
