@@ -95,8 +95,8 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 			nonce = cacheNonce
 		}
 
-		if tx.Nonce() == nonce+1 {
-			nonceCache[from] = tx.Nonce()
+		if tx.Nonce() == nonce {
+			nonceCache[from] = nonce + 1
 		} else {
 			log.Debug("IL verification failed: incorrect nonce", "state nonce", nonce, "tx nonce", tx.Nonce())
 			return false, ErrIncorrectNonce
