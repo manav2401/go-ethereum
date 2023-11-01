@@ -18,6 +18,7 @@ var (
 	ErrInvalidTx             = errors.New("invalid tx in IL")
 	ErrGasLimitExceeded      = errors.New("gas limit exceeds maximum allowed in IL")
 	ErrSenderMismatch        = errors.New("summary and transaction sender mismatch in IL")
+	ErrGasLimitMismatch      = errors.New("summary and transaction gaslimit mismatch in IL")
 	ErrIncorrectNonce        = errors.New("incorrect nonce in IL")
 	ErrInsufficientGasFeeCap = errors.New("insufficient gas fee cap in IL")
 )
@@ -87,6 +88,11 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 		if summary.Address != from {
 			log.Debug("IL verification failed: summary and transaction address mismatch", "summary", summary.Address, "tx", from)
 			return false, ErrSenderMismatch
+		}
+
+		if summary.GasLimit != uint32(tx.Gas()) {
+			log.Debug("IL verification failed: summary and transaction gaslimit mismatch", "summary", summary.GasLimit, "tx", tx.Gas())
+			return false, ErrGasLimitMismatch
 		}
 
 		// Verify nonce from state
