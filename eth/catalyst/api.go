@@ -548,8 +548,6 @@ func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHas
 func (api *ConsensusAPI) NewPayloadVePBS(params engine.ExecutableData, versionedHashes *[]common.Hash) (engine.PayloadStatusV1, error) {
 	// TODO: Add HF related checks
 
-	// TODO: Add checks if IL fields (i.e. summary + exclusion list) are present or not
-
 	var hashes []common.Hash
 	if versionedHashes != nil {
 		hashes = *versionedHashes
@@ -580,6 +578,11 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 		log.Warn("Invalid NewPayload params", "params", params, "error", err)
 		return engine.PayloadStatusV1{Status: engine.INVALID}, nil
 	}
+
+	if (params.InclusionListSummary == nil && params.InclusionListExclusions != nil) || (params.InclusionListSummary != nil && params.InclusionListExclusions == nil) {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, nil
+	}
+
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastNewPayloadLock.Lock()
 	api.lastNewPayloadUpdate = time.Now()
@@ -638,10 +641,11 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 		return engine.PayloadStatusV1{Status: engine.ACCEPTED}, nil
 	}
 
-	// Before inserting block, verify if it satisfies the inclusion list
-	if valid, err := api.eth.BlockChain().VerifyInclusionListInBlock(params.InclusionListSummary, params.InclusionListExclusions, parent.Body().Transactions, block.Body().Transactions); !valid || err != nil {
-		// TODO: Parse error correctly here for returning
-		return engine.PayloadStatusV1{Status: engine.INVALID}, err
+	if params.InclusionListSummary != nil && params.InclusionListExclusions != nil {
+		if valid, err := api.eth.BlockChain().VerifyInclusionListInBlock(params.InclusionListSummary, params.InclusionListExclusions, block.Body().Transactions, parent); !valid || err != nil {
+			// TODO: Parse error correctly here for returning
+			return engine.PayloadStatusV1{Status: engine.INVALID}, err
+		}
 	}
 
 	log.Trace("Inserting block without sethead", "hash", block.Hash(), "number", block.Number)

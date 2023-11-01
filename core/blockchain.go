@@ -256,6 +256,9 @@ type BlockChain struct {
 	processor  Processor // Block transaction processor interface
 	forker     *ForkChoice
 	vmConfig   vm.Config
+
+	// ePBS
+	inclusionListStore map[common.Hash]types.InclusionList
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -284,21 +287,22 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	log.Info("")
 
 	bc := &BlockChain{
-		chainConfig:   chainConfig,
-		cacheConfig:   cacheConfig,
-		db:            db,
-		triedb:        triedb,
-		triegc:        prque.New[int64, common.Hash](nil),
-		quit:          make(chan struct{}),
-		chainmu:       syncx.NewClosableMutex(),
-		bodyCache:     lru.NewCache[common.Hash, *types.Body](bodyCacheLimit),
-		bodyRLPCache:  lru.NewCache[common.Hash, rlp.RawValue](bodyCacheLimit),
-		receiptsCache: lru.NewCache[common.Hash, []*types.Receipt](receiptsCacheLimit),
-		blockCache:    lru.NewCache[common.Hash, *types.Block](blockCacheLimit),
-		txLookupCache: lru.NewCache[common.Hash, *rawdb.LegacyTxLookupEntry](txLookupCacheLimit),
-		futureBlocks:  lru.NewCache[common.Hash, *types.Block](maxFutureBlocks),
-		engine:        engine,
-		vmConfig:      vmConfig,
+		chainConfig:        chainConfig,
+		cacheConfig:        cacheConfig,
+		db:                 db,
+		triedb:             triedb,
+		triegc:             prque.New[int64, common.Hash](nil),
+		quit:               make(chan struct{}),
+		chainmu:            syncx.NewClosableMutex(),
+		bodyCache:          lru.NewCache[common.Hash, *types.Body](bodyCacheLimit),
+		bodyRLPCache:       lru.NewCache[common.Hash, rlp.RawValue](bodyCacheLimit),
+		receiptsCache:      lru.NewCache[common.Hash, []*types.Receipt](receiptsCacheLimit),
+		blockCache:         lru.NewCache[common.Hash, *types.Block](blockCacheLimit),
+		txLookupCache:      lru.NewCache[common.Hash, *rawdb.LegacyTxLookupEntry](txLookupCacheLimit),
+		futureBlocks:       lru.NewCache[common.Hash, *types.Block](maxFutureBlocks),
+		engine:             engine,
+		vmConfig:           vmConfig,
+		inclusionListStore: make(map[common.Hash]types.InclusionList),
 	}
 	bc.flushInterval.Store(int64(cacheConfig.TrieTimeLimit))
 	bc.forker = NewForkChoice(bc, shouldPreserve)
@@ -2588,13 +2592,23 @@ func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
 
+// VerifyInclusionList validates an inclusion list to make sure it satisfies all the condition based on a `parent` header.
 func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *types.Header, getStateNonce func(common.Address) uint64) (bool, error) {
-	return verifyInclusionList(list, parent, bc.Config(), getStateNonce)
+	valid, err := verifyInclusionList(list, parent, bc.Config(), getStateNonce)
+
+	if valid && err == nil {
+		bc.inclusionListStore[parent.Hash()] = list
+	}
+
+	return valid, err
 }
 
-func (bc *BlockChain) VerifyInclusionListInBlock(summary []*types.InclusionListEntry, exclusionList []uint64, parentTxs, currentTxs types.Transactions) (bool, error) {
-	// TODO: Gather the IL txs as well here based on the summary
-	list := types.InclusionList{}
+// VerifyInclusionListInBlock verifies the block solely based on the inclusion list conditions based on `parent` block's data.
+func (bc *BlockChain) VerifyInclusionListInBlock(summary []*types.InclusionListEntry, exclusionList []uint64, currentTxs types.Transactions, parent *types.Block) (bool, error) {
+	list, ok := bc.inclusionListStore[parent.Hash()]
+	if !ok {
+		return false, errors.New("missing inclusion list")
+	}
 
-	return verifyInclusionListInBlock(list, exclusionList, parentTxs, currentTxs, bc.Config())
+	return verifyInclusionListInBlock(list, exclusionList, parent.Body().Transactions, currentTxs, bc.Config())
 }
