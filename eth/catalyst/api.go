@@ -642,9 +642,14 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 	}
 
 	if params.InclusionListSummary != nil && params.InclusionListExclusions != nil {
-		if valid, err := api.eth.BlockChain().VerifyInclusionListInBlock(params.InclusionListSummary, params.InclusionListExclusions, block.Body().Transactions, parent); !valid || err != nil {
-			// TODO: Parse error correctly here for returning
-			return engine.PayloadStatusV1{Status: engine.INVALID}, err
+		valid, err := api.eth.BlockChain().VerifyInclusionListInBlock(params.InclusionListSummary, params.InclusionListExclusions, block.Body().Transactions, parent)
+		if !valid && err == nil {
+			err = errors.New("invalid inclusion list")
+		}
+
+		if err != nil {
+			log.Trace("Failed to validate block based on inclusion list criteria", "err", err)
+			return api.invalid(err, parent.Header()), nil
 		}
 	}
 

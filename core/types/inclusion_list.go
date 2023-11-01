@@ -13,3 +13,5 @@ type InclusionListEntry struct {
 	Address  common.Address `json:"address"`
 	GasLimit uint32         `json:"gasLimit"` // TODO(manav): change to uint8
 }
+
+type InclusionListSummaries []*InclusionListEntry

@@ -129,21 +129,15 @@ func verifyInclusionList(list types.InclusionList, parent *types.Header, config 
 //     are present in the summary or not.
 //  2. If the remaining summary entries are satisfied by the first `k` transactions
 //     of the current block.
-func verifyInclusionListInBlock(list types.InclusionList, exclusionList []uint64, parentTxs, currentTxs types.Transactions, config *params.ChainConfig) (bool, error) {
+func verifyInclusionListInBlock(summaryEntries types.InclusionListSummaries, exclusionList []uint64, parentTxs, currentTxs types.Transactions, config *params.ChainConfig) (bool, error) {
 	// We assume that summary isn't ordered
 	// Prepare a map of summary entries: address -> []{gas limit}.
 	summaries := make(map[common.Address][]uint32)
-	for _, summary := range list.Summary {
+	for _, summary := range summaryEntries {
 		if _, ok := summaries[summary.Address]; !ok {
 			summaries[summary.Address] = make([]uint32, 0)
 		}
 		summaries[summary.Address] = append(summaries[summary.Address], summary.GasLimit)
-	}
-
-	// Prepare a map for txs in the IL
-	ilTxs := make(map[common.Hash]*types.Transaction)
-	for _, tx := range list.Transactions {
-		ilTxs[tx.Hash()] = tx
 	}
 
 	// Prepare the signer object
@@ -169,7 +163,7 @@ func verifyInclusionListInBlock(list types.InclusionList, exclusionList []uint64
 
 	index := 0
 	for {
-		if exclusions < len(list.Summary) {
+		if exclusions < len(summaryEntries) {
 			break
 		}
 
@@ -190,12 +184,6 @@ func verifyInclusionListInBlock(list types.InclusionList, exclusionList []uint64
 		}
 		summaries[from] = summaries[from][1:]
 		exclusions++
-
-		// Verify hash
-		if _, ok := ilTxs[tx.Hash()]; !ok {
-			return false, errors.New("missing IL in current block")
-		}
-
 		index++
 	}
 

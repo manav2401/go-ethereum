@@ -258,7 +258,7 @@ type BlockChain struct {
 	vmConfig   vm.Config
 
 	// ePBS
-	inclusionListStore map[common.Hash]types.InclusionList
+	inclusionListStore map[common.Hash]types.InclusionListSummaries
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -302,7 +302,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		futureBlocks:       lru.NewCache[common.Hash, *types.Block](maxFutureBlocks),
 		engine:             engine,
 		vmConfig:           vmConfig,
-		inclusionListStore: make(map[common.Hash]types.InclusionList),
+		inclusionListStore: make(map[common.Hash]types.InclusionListSummaries),
 	}
 	bc.flushInterval.Store(int64(cacheConfig.TrieTimeLimit))
 	bc.forker = NewForkChoice(bc, shouldPreserve)
@@ -2597,7 +2597,7 @@ func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *type
 	valid, err := verifyInclusionList(list, parent, bc.Config(), getStateNonce)
 
 	if valid && err == nil {
-		bc.inclusionListStore[parent.Hash()] = list
+		bc.inclusionListStore[parent.Hash()] = list.Summary
 	}
 
 	return valid, err
@@ -2605,10 +2605,10 @@ func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *type
 
 // VerifyInclusionListInBlock verifies the block solely based on the inclusion list conditions based on `parent` block's data.
 func (bc *BlockChain) VerifyInclusionListInBlock(summary []*types.InclusionListEntry, exclusionList []uint64, currentTxs types.Transactions, parent *types.Block) (bool, error) {
-	list, ok := bc.inclusionListStore[parent.Hash()]
+	summary, ok := bc.inclusionListStore[parent.Hash()]
 	if !ok {
 		return false, errors.New("missing inclusion list")
 	}
 
-	return verifyInclusionListInBlock(list, exclusionList, parent.Body().Transactions, currentTxs, bc.Config())
+	return verifyInclusionListInBlock(summary, exclusionList, parent.Body().Transactions, currentTxs, bc.Config())
 }
