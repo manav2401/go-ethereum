@@ -1681,7 +1681,7 @@ func (pool *LegacyPool) demoteUnexecutables() {
 
 // GetInclusionList returns an inclusion list from the pool containing pairs
 // of transaction summary and data which are executable.
-func (pool *LegacyPool) GetInclusionList() *types.InclusionList {
+func (pool *LegacyPool) GetInclusionList() (*types.InclusionList, error) {
 	summaries := make([]*types.InclusionListEntry, 0, core.MaxTransactionsPerInclusionList)
 	transactions := make([]*types.Transaction, 0, core.MaxTransactionsPerInclusionList)
 
@@ -1739,7 +1739,7 @@ func (pool *LegacyPool) GetInclusionList() *types.InclusionList {
 		transactions = append(transactions, remoteTxs...)
 	}
 
-	return &types.InclusionList{Summary: summaries, Transactions: transactions}
+	return &types.InclusionList{Summary: summaries, Transactions: transactions}, nil
 }
 
 func filterTxs(config *params.ChainConfig, txs *transactionsByPriceAndNonce, total, gasLimit *uint64, gasFeeThreshold *big.Float) ([]*types.InclusionListEntry, []*types.Transaction) {

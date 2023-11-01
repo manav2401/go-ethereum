@@ -294,5 +294,6 @@ type InclusionListSummaryV1 []*types.InclusionListEntry
 type ExclusionList []uint64
 
 type InclusionListStatusV1 struct {
-	Status string `json:"status"`
+	Status         string `json:"status"`
+	ValidatorError error  `json:"validatorError"`
 }

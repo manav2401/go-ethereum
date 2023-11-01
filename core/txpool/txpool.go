@@ -428,11 +428,13 @@ func (p *TxPool) Status(hash common.Hash) TxStatus {
 
 // GetInclusionList returns an inclusion list from the pool containing pairs
 // of transaction summary and data which are executable.
-func (p *TxPool) GetInclusionList() *types.InclusionList {
+func (p *TxPool) GetInclusionList() (*types.InclusionList, error) {
 	for _, subpool := range p.subpools {
-		if list := subpool.GetInclusionList(); list != nil {
-			return list
+		list, err := subpool.GetInclusionList()
+		if errors.Is(err, ErrUnsupportedMethod) {
+			continue
 		}
+		return list, err
 	}
-	return nil
+	return nil, nil
 }

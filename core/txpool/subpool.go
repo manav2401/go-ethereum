@@ -127,7 +127,7 @@ type SubPool interface {
 
 	// GetInclusionList returns an inclusion list from the pool containing pairs
 	// of transaction summary and data which are executable.
-	GetInclusionList() *types.InclusionList
+	GetInclusionList() (*types.InclusionList, error)
 
 	// Status returns the known status (unknown/pending/queued) of a transaction
 	// identified by their hashes.

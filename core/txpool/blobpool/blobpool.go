@@ -1540,4 +1540,6 @@ func (p *BlobPool) Status(hash common.Hash) txpool.TxStatus {
 // GetInclusionList returns an inclusion list from the pool containing pairs
 // of transaction summary and data which are executable. Currently blob txs
 // aren't supported in the inclusion list.
-func (pool *BlobPool) GetInclusionList() *types.InclusionList { return nil }
+func (pool *BlobPool) GetInclusionList() (*types.InclusionList, error) {
+	return nil, txpool.ErrUnsupportedMethod
+}

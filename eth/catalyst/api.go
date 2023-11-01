@@ -169,13 +169,24 @@ func (api *ConsensusAPI) GetInclusionListV1(parentHash common.Hash) (engine.Incl
 		log.Warn("Inclusion list requested with zero parent hash")
 		return engine.InclusionListV1{}, errors.New("getInclusionListV1 called with empty parent hash")
 	}
-	// TODO(manav): Do we check here if we're on correct fork or are fully synced? If not
-	// we might end up delivering wrong IL. Other will reject it though but do we want to
-	// risk it?
+
+	// Check if we have parent block available or not. If not, reject the
+	// inclusion list. Note: As the IL API's are for specific purpose, we
+	// won't trigger a sync here if parent block is unavailable.
+	parent := api.eth.BlockChain().GetBlockByHash(parentHash)
+	if parent == nil {
+		log.Warn("Inclusion list requested with unknown parent", "hash", parentHash)
+		return engine.InclusionListV1{}, errors.New("getInclusionListV1 called with invalid parent hash")
+	}
 
 	// TODO: Get below function to return errors?
-	il := api.eth.TxPool().GetInclusionList()
-	return (engine.InclusionListV1)(*il), nil
+	list, err := api.eth.TxPool().GetInclusionList()
+	if err != nil {
+		log.Trace("Failed to get inclusion list", "parent", parentHash, "err", err)
+		return engine.InclusionListV1{}, err
+	}
+
+	return (engine.InclusionListV1)(*list), nil
 }
 
 // NewInclusionListV1 validates whether an inclusion list (summary + txs) is
@@ -190,8 +201,8 @@ func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionLis
 	}
 
 	// Check if we have parent block available or not. If not, reject the
-	// inclusion list.
-	// (TODO): Do we need to trigger a sync here? I believe not.
+	// inclusion list. Note: As the IL API's are for specific purpose, we
+	// won't trigger a sync here if parent block is unavailable.
 	parent := api.eth.BlockChain().GetBlockByHash(params.ParentHash)
 	if parent == nil {
 		log.Warn("Inclusion list verification requested with unknown parent", "hash", params.ParentHash)
@@ -202,14 +213,23 @@ func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionLis
 		return api.eth.TxPool().StateNonce(addr)
 	}
 
-	valid, err := api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), getStateNonce)
-	if !valid && err == nil {
+	var (
+		valid           bool
+		validationError error
+		err             error
+	)
+	valid, validationError = api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), getStateNonce)
+	if !valid && validationError == nil {
+		validationError = errors.New("invalid inclusion list")
+	}
+
+	if validationError != nil {
 		err = errors.New("invalid inclusion list")
 	}
 
 	if err != nil {
-		log.Trace("Inclusion list verification failed", "err", err)
-		return engine.InclusionListStatusV1{Status: engine.INVALID}, err
+		log.Trace("Inclusion list verification failed", "validator error", validationError, "err", err)
+		return engine.InclusionListStatusV1{Status: engine.INVALID, ValidatorError: validationError}, err
 	}
 
 	return engine.InclusionListStatusV1{Status: engine.VALID}, nil
