@@ -106,6 +106,10 @@ type SubPool interface {
 	// by the pool already applied on top.
 	Nonce(addr common.Address) uint64
 
+	// StateNonce returns the next nonce of an account from the underlying state, without
+	// applying any transactions from the pool on top.
+	StateNonce(addr common.Address) uint64
+
 	// Stats retrieves the current pool stats, namely the number of pending and the
 	// number of queued (non-executable) transactions.
 	Stats() (int, int)
@@ -120,6 +124,10 @@ type SubPool interface {
 
 	// Locals retrieves the accounts currently considered local by the pool.
 	Locals() []common.Address
+
+	// GetInclusionList returns an inclusion list from the pool containing pairs
+	// of transaction summary and data which are executable.
+	GetInclusionList() (*types.InclusionList, error)
 
 	// Status returns the known status (unknown/pending/queued) of a transaction
 	// identified by their hashes.

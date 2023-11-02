@@ -2587,3 +2587,13 @@ func (bc *BlockChain) SetTrieFlushInterval(interval time.Duration) {
 func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
+
+// VerifyInclusionList validates an inclusion list to make sure it satisfies all the condition based on a `parent` header.
+func (bc *BlockChain) VerifyInclusionList(list types.InclusionList, parent *types.Header, getStateNonce func(common.Address) uint64) (bool, error) {
+	return verifyInclusionList(list, parent, bc.Config(), getStateNonce)
+}
+
+// VerifyInclusionListInBlock verifies the block solely based on the inclusion list conditions based on `parent` block's data.
+func (bc *BlockChain) VerifyInclusionListInBlock(summary []*types.InclusionListEntry, exclusionList []uint64, currentTxs types.Transactions, parent *types.Block) (bool, error) {
+	return verifyInclusionListInBlock(summary, exclusionList, parent.Body().Transactions, currentTxs, bc.Config())
+}

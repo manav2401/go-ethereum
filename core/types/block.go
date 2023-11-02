@@ -196,6 +196,8 @@ type Block struct {
 	transactions Transactions
 	withdrawals  Withdrawals
 
+	summary []*InclusionListEntry
+
 	// caches
 	hash atomic.Value
 	size atomic.Value

@@ -58,11 +58,13 @@ var (
 	// VALID is returned by the engine API in the following calls:
 	//   - newPayloadV1:       if the payload was already known or was just validated and executed
 	//   - forkchoiceUpdateV1: if the chain accepted the reorg (might ignore if it's stale)
+	// 	 - newInclusionListV1: if the inclusion list is valid and executable on current state
 	VALID = "VALID"
 
 	// INVALID is returned by the engine API in the following calls:
 	//   - newPayloadV1:       if the payload failed to execute on top of the local chain
 	//   - forkchoiceUpdateV1: if the new head is unknown, pre-merge, or reorg to it fails
+	// 	 - newInclusionListV1: if the inclusion list is invalid
 	INVALID = "INVALID"
 
 	// SYNCING is returned by the engine API in the following calls:

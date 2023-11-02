@@ -63,6 +63,10 @@ type ExecutableData struct {
 	Withdrawals   []*types.Withdrawal `json:"withdrawals"`
 	BlobGasUsed   *uint64             `json:"blobGasUsed"`
 	ExcessBlobGas *uint64             `json:"excessBlobGas"`
+
+	// ePBS
+	InclusionListSummary    InclusionListSummaryV1 `json:"inclusionListSummary"`
+	InclusionListExclusions ExclusionList          `json:"inclusionListExclusions"`
 }
 
 // JSON type overrides for executableData.
@@ -276,4 +280,20 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 type ExecutionPayloadBodyV1 struct {
 	TransactionData []hexutil.Bytes     `json:"transactions"`
 	Withdrawals     []*types.Withdrawal `json:"withdrawals"`
+}
+
+type VerifiableInclusionList struct {
+	ParentHash    common.Hash         `json:"parentHash"`
+	InclusionList types.InclusionList `json:"inclusionList"`
+}
+
+type InclusionListV1 types.InclusionList
+
+type InclusionListSummaryV1 []*types.InclusionListEntry
+
+type ExclusionList []uint64
+
+type InclusionListStatusV1 struct {
+	Status         string `json:"status"`
+	ValidatorError error  `json:"validatorError"`
 }

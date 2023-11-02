@@ -87,6 +87,9 @@ var caps = []string{
 	"engine_newPayloadV3",
 	"engine_getPayloadBodiesByHashV1",
 	"engine_getPayloadBodiesByRangeV1",
+	"engine_getInclusionListV1",
+	"engine_newInclusionListV1",
+	"engine_newPayloadVePBS",
 }
 
 type ConsensusAPI struct {
@@ -154,6 +157,82 @@ func newConsensusAPIWithoutHeartbeat(eth *eth.Ethereum) *ConsensusAPI {
 	}
 	eth.Downloader().SetBadBlockCallback(api.setInvalidAncestor)
 	return api
+}
+
+// GetInclusionListV1 returns an inclusion list which contains summary + list of transactions
+// which are valid for the current slot.
+func (api *ConsensusAPI) GetInclusionListV1(parentHash common.Hash) (engine.InclusionListV1, error) {
+	// TODO: Add HF related checks
+
+	log.Trace("Engine API request received", "method", "GetInclusionListV1")
+	if parentHash == (common.Hash{}) {
+		log.Warn("Inclusion list requested with zero parent hash")
+		return engine.InclusionListV1{}, errors.New("getInclusionListV1 called with empty parent hash")
+	}
+
+	// Check if we have parent block available or not. If not, reject the
+	// inclusion list. Note: As the IL API's are for specific purpose, we
+	// won't trigger a sync here if parent block is unavailable.
+	parent := api.eth.BlockChain().GetBlockByHash(parentHash)
+	if parent == nil {
+		log.Warn("Inclusion list requested with unknown parent", "hash", parentHash)
+		return engine.InclusionListV1{}, errors.New("getInclusionListV1 called with invalid parent hash")
+	}
+
+	// TODO: Get below function to return errors?
+	list, err := api.eth.TxPool().GetInclusionList()
+	if err != nil {
+		log.Trace("Failed to get inclusion list", "parent", parentHash, "err", err)
+		return engine.InclusionListV1{}, err
+	}
+
+	return (engine.InclusionListV1)(*list), nil
+}
+
+// NewInclusionListV1 validates whether an inclusion list (summary + txs) is
+// correct for the current state or not.
+func (api *ConsensusAPI) NewInclusionListV1(params engine.VerifiableInclusionList) (engine.InclusionListStatusV1, error) {
+	// TODO: Add HF related checks
+
+	log.Trace("Engine API request received", "method", "NewInclusionListV1")
+	if params.ParentHash == (common.Hash{}) {
+		log.Warn("Inclusion list verification requested with zero parent hash")
+		return engine.InclusionListStatusV1{Status: engine.INVALID}, errors.New("newInclusionListV1 called with empty parent hash")
+	}
+
+	// Check if we have parent block available or not. If not, reject the
+	// inclusion list. Note: As the IL API's are for specific purpose, we
+	// won't trigger a sync here if parent block is unavailable.
+	parent := api.eth.BlockChain().GetBlockByHash(params.ParentHash)
+	if parent == nil {
+		log.Warn("Inclusion list verification requested with unknown parent", "hash", params.ParentHash)
+		return engine.InclusionListStatusV1{Status: engine.INVALID}, errors.New("newInclusionListV1 called with invalid parent hash")
+	}
+
+	getStateNonce := func(addr common.Address) uint64 {
+		return api.eth.TxPool().StateNonce(addr)
+	}
+
+	var (
+		valid           bool
+		validationError error
+		err             error
+	)
+	valid, validationError = api.eth.BlockChain().VerifyInclusionList(params.InclusionList, parent.Header(), getStateNonce)
+	if !valid && validationError == nil {
+		validationError = errors.New("invalid inclusion list")
+	}
+
+	if validationError != nil {
+		err = errors.New("invalid inclusion list")
+	}
+
+	if err != nil {
+		log.Trace("Inclusion list verification failed", "validator error", validationError, "err", err)
+		return engine.InclusionListStatusV1{Status: engine.INVALID, ValidatorError: validationError}, err
+	}
+
+	return engine.InclusionListStatusV1{Status: engine.VALID}, nil
 }
 
 // ForkchoiceUpdatedV1 has several responsibilities:
@@ -465,6 +544,17 @@ func (api *ConsensusAPI) NewPayloadV3(params engine.ExecutableData, versionedHas
 	return api.newPayload(params, hashes)
 }
 
+// NewPayloadVePBS creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
+func (api *ConsensusAPI) NewPayloadVePBS(params engine.ExecutableData, versionedHashes *[]common.Hash) (engine.PayloadStatusV1, error) {
+	// TODO: Add HF related checks
+
+	var hashes []common.Hash
+	if versionedHashes != nil {
+		hashes = *versionedHashes
+	}
+	return api.newPayload(params, hashes)
+}
+
 func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashes []common.Hash) (engine.PayloadStatusV1, error) {
 	// The locking here is, strictly, not required. Without these locks, this can happen:
 	//
@@ -488,6 +578,11 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 		log.Warn("Invalid NewPayload params", "params", params, "error", err)
 		return engine.PayloadStatusV1{Status: engine.INVALID}, nil
 	}
+
+	if (params.InclusionListSummary == nil && params.InclusionListExclusions != nil) || (params.InclusionListSummary != nil && params.InclusionListExclusions == nil) {
+		return engine.PayloadStatusV1{Status: engine.INVALID}, nil
+	}
+
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastNewPayloadLock.Lock()
 	api.lastNewPayloadUpdate = time.Now()
@@ -545,6 +640,19 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 		log.Warn("State not available, ignoring new payload")
 		return engine.PayloadStatusV1{Status: engine.ACCEPTED}, nil
 	}
+
+	if params.InclusionListSummary != nil && params.InclusionListExclusions != nil {
+		valid, err := api.eth.BlockChain().VerifyInclusionListInBlock(params.InclusionListSummary, params.InclusionListExclusions, block.Body().Transactions, parent)
+		if !valid && err == nil {
+			err = errors.New("invalid inclusion list")
+		}
+
+		if err != nil {
+			log.Trace("Failed to validate block based on inclusion list criteria", "err", err)
+			return api.invalid(err, parent.Header()), nil
+		}
+	}
+
 	log.Trace("Inserting block without sethead", "hash", block.Hash(), "number", block.Number)
 	if err := api.eth.BlockChain().InsertBlockWithoutSetHead(block); err != nil {
 		log.Warn("NewPayloadV1: inserting block failed", "error", err)

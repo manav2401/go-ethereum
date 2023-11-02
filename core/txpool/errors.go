@@ -54,4 +54,8 @@ var (
 	// ErrFutureReplacePending is returned if a future transaction replaces a pending
 	// transaction. Future transactions should only be able to replace other future transactions.
 	ErrFutureReplacePending = errors.New("future transaction tries to replace pending")
+
+	// ErrUnsupportedMethod is returned when an unsupported method is called on
+	// a subpool.
+	ErrUnsupportedMethod = errors.New("unsupported method")
 )

@@ -341,6 +341,18 @@ func (p *TxPool) Nonce(addr common.Address) uint64 {
 	return nonce
 }
 
+// StateNonce returns the next nonce of an account from the underlying state, without
+// applying any transactions from the pool on top.
+func (p *TxPool) StateNonce(addr common.Address) uint64 {
+	var nonce uint64
+	for _, subpool := range p.subpools {
+		if next := subpool.StateNonce(addr); nonce < next {
+			nonce = next
+		}
+	}
+	return nonce
+}
+
 // Stats retrieves the current pool stats, namely the number of pending and the
 // number of queued (non-executable) transactions.
 func (p *TxPool) Stats() (int, int) {
@@ -412,4 +424,17 @@ func (p *TxPool) Status(hash common.Hash) TxStatus {
 		}
 	}
 	return TxStatusUnknown
+}
+
+// GetInclusionList returns an inclusion list from the pool containing pairs
+// of transaction summary and data which are executable.
+func (p *TxPool) GetInclusionList() (*types.InclusionList, error) {
+	for _, subpool := range p.subpools {
+		list, err := subpool.GetInclusionList()
+		if errors.Is(err, ErrUnsupportedMethod) {
+			continue
+		}
+		return list, err
+	}
+	return nil, nil
 }
